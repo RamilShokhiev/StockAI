@@ -1,0 +1,30 @@
+# --- Python virtualenv ---
+.venv/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Environment files / secrets ---
+.env
+backend/.env
+
+# --- Databases / local state ---
+*.sqlite3
+
+# --- Node / React Native ---
+**/node_modules/
+**/.expo/
+
+# Expo / Metro caches
+.expo/
+.expo-shared/
+
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

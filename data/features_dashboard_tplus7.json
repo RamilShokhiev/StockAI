@@ -1,0 +1,78 @@
+{
+  "BTC": {
+    "symbol": "BTC",
+    "horizon": 7,
+    "rows_total_raw": 2846,
+    "rows_after_dropna": 2819,
+    "date_range": [
+      "2018-01-21 23:59:59.999000+00:00",
+      "2025-10-09 23:59:59.999000+00:00"
+    ],
+    "n_features": 55,
+    "target_columns": [
+      "y7_class",
+      "ret_7d_ahead"
+    ],
+    "files": {
+      "parquet": "data\\BTC_features_tplus7.parquet",
+      "csv": "data\\BTC_features_tplus7.csv"
+    }
+  },
+  "ETH": {
+    "symbol": "ETH",
+    "horizon": 7,
+    "rows_total_raw": 2557,
+    "rows_after_dropna": 2530,
+    "date_range": [
+      "2018-11-12 00:00:00+00:00",
+      "2025-10-15 00:00:00+00:00"
+    ],
+    "n_features": 44,
+    "target_columns": [
+      "y7_class",
+      "ret_7d_ahead"
+    ],
+    "files": {
+      "parquet": "data\\ETH_features_tplus7.parquet",
+      "csv": "data\\ETH_features_tplus7.csv"
+    }
+  },
+  "TSLA": {
+    "symbol": "TSLA",
+    "horizon": 7,
+    "rows_total_raw": 1255,
+    "rows_after_dropna": 1228,
+    "date_range": [
+      "2020-11-20 00:00:00+00:00",
+      "2025-10-13 00:00:00+00:00"
+    ],
+    "n_features": 44,
+    "target_columns": [
+      "y7_class",
+      "ret_7d_ahead"
+    ],
+    "files": {
+      "parquet": "data\\TSLA_features_tplus7.parquet",
+      "csv": "data\\TSLA_features_tplus7.csv"
+    }
+  },
+  "AAPL": {
+    "symbol": "AAPL",
+    "horizon": 7,
+    "rows_total_raw": 1255,
+    "rows_after_dropna": 1228,
+    "date_range": [
+      "2020-11-20 00:00:00+00:00",
+      "2025-10-13 00:00:00+00:00"
+    ],
+    "n_features": 44,
+    "target_columns": [
+      "y7_class",
+      "ret_7d_ahead"
+    ],
+    "files": {
+      "parquet": "data\\AAPL_features_tplus7.parquet",
+      "csv": "data\\AAPL_features_tplus7.csv"
+    }
+  }
+}

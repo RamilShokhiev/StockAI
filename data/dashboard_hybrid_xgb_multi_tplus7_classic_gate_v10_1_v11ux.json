@@ -1,0 +1,26 @@
+{
+  "BTC": {
+    "symbol": "BTC",
+    "holdout_bal_acc": 0.501,
+    "holdout_auc": 0.4947,
+    "pos_rate": 0.3111
+  },
+  "ETH": {
+    "symbol": "ETH",
+    "holdout_bal_acc": 0.4792,
+    "holdout_auc": 0.5302,
+    "pos_rate": 0.3944
+  },
+  "TSLA": {
+    "symbol": "TSLA",
+    "holdout_bal_acc": 0.4777,
+    "holdout_auc": 0.4936,
+    "pos_rate": 0.0833
+  },
+  "AAPL": {
+    "symbol": "AAPL",
+    "holdout_bal_acc": 0.4876,
+    "holdout_auc": 0.5844,
+    "pos_rate": 0.2167
+  }
+}
