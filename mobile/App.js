@@ -582,7 +582,7 @@ export default function App() {
       try {
         let predData = null;
 
-        // 1. Онлайн-инференс для текущего горизонта
+        // 1. Online inference for the current horizon
         try {
           const predResp = await axios.get(
             `${API_BASE_URL}/online_prediction/${selectedSymbol}`,
