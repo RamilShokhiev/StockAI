@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Загрузить backend/.env (то же место, что и в main.py)
+# Load backend/.env (same location as in main.py)
 env_path = Path(__file__).resolve().parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
