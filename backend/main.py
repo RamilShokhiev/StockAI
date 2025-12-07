@@ -38,26 +38,26 @@ SUPPORTED_ASSETS = ["BTC", "ETH", "TSLA", "AAPL"]
 SUPPORTED_HORIZONS = [1, 3, 7]
 DEFAULT_HORIZON = 1
 
-# Маппинг горизонта -> версия модели (для meta-файлов)
+# Horizon mapping -> model version (for meta files)
 MODEL_VERSION_TPLUS = {
     1: "hybrid_xgb_multi_tplus1_classic_gate_v10_1_v11ux",
-    3: "hybrid_xgb_multi_tplus3_classic_gate_v10_1_v11ux",
+    3: "hybrid_xgb_multi_tplus3_classic_gate_v10_1_v11ux_v2",
     7: "hybrid_xgb_multi_tplus7_classic_gate_v10_1_v11ux",
 }
 
 def _load_business_from_meta(symbol: str, horizon_days: int):
     """
-    Fallback: если в БД нет strategy_return / buy_hold_return,
-    достаём их напрямую из соответствующего meta.json.
+    Fallback: if strategy_return / buy_hold_return are not in the database,
+    we retrieve them directly from the corresponding meta.json.
 
-    Возвращает dict с ключами:
+    Returns a dict with keys:
       - strategy_return
       - buy_hold_return
       - sharpe
       - win_rate
       - test_period_start (datetime или None)
       - test_period_end   (datetime или None)
-    либо None, если meta не найден или структура не подходит.
+    or None if meta is not found or the structure is not suitable.
     """
     version = MODEL_VERSION_TPLUS.get(horizon_days)
     if not version:
@@ -81,11 +81,11 @@ def _load_business_from_meta(symbol: str, horizon_days: int):
     target = f"T+{horizon_days}"
 
     def _find_key(prefix: str):
-        # 1) сначала пытаемся найти ключ, в котором явно фигурирует T+N
+        # 1) First, we try to find a key that clearly contains T+N.
         for k in biz.keys():
             if k.startswith(prefix) and target in k:
                 return k
-        # 2) если не нашли — берём первый попавшийся с таким префиксом
+        # 2) if you can't find it, take the first one you find with that prefix
         for k in biz.keys():
             if k.startswith(prefix):
                 return k
@@ -613,7 +613,7 @@ def get_stats(
         t_start = rec.test_period_start
         t_end = rec.test_period_end
 
-        # Fallback из meta, если в БД нет доходностей
+        # Fallback из meta, if there are no returns in the database
         if strat is None or bh is None:
             fb = _load_business_from_meta(rec.symbol, rec.horizon_days)
             if fb:
