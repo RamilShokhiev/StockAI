@@ -8,27 +8,27 @@ Important:
     - predict_live(symbol, horizon_days, start=None)
     - predict_live_tplus1(symbol, start=None) — alias for horizon_days=1
 
-Если параметр start не передан, модуль автоматически берёт
-динамический диапазон примерно за последний год:
-это достаточно для Z_WIN=180 и EMA200, но не грузит лишнюю
-историю с 2018 года.
+If the start parameter is not passed, the module automatically takes
+the dynamic range for approximately the last year:
+this is sufficient for Z_WIN=180 and EMA200, but does not load unnecessary
+history from 2018.
 
-Возвращает dict с ключами:
-    - "asof_time"          — когда сделан прогноз (UTC, ISO)
-    - "pred_date"          — целевая дата T+N (с учётом crypto / equity календаря)
-    - "prob_up_calibrated" — P(up) после калибровки (если есть iso)
-    - "decision_long"      — финальное long/flat решение по логике v10.1
-    - "ux_verdict"         — человекочитаемый вердикт ("Покупай" / "Осторожно" / "Нейтрально")
-    - "horizon_days"       — int
+Returns a dict with keys:
+    - “asof_time”          — when the forecast was made (UTC, ISO)
+    - “pred_date”          — target date T+N (taking into account the crypto/equity calendar)
+    - “prob_up_calibrated” — P(up) after calibration (if iso is available)
+    - “decision_long”      — final long/flat decision based on v10.1 logic
+    - “ux_verdict”         — human-readable verdict (“Buy” / ‘Caution’ / “Neutral”)
+    - “horizon_days”       — int
 
-Онлайн-инференс под v10.1:
-1) тянем OHLCV из yfinance (start → сегодня),
-2) строим base-фичи по тому же TA-пайплайну, что и оффлайн,
-3) считаем z-фичи (z180_*, rz180_*) как в train-скрипте,
-4) по meta["features"] собираем вектор признаков для последней даты,
-5) прогоняем через XGBoost-классификатор/регрессор,
-6) применяем alpha/thr/gate_value/regime_ema из meta,
-7) формируем UX-вердикт.
+Online inference under v10.1:
+1) pull OHLCV from yfinance (start → today),
+2) build base features using the same TA pipeline as offline,
+3) calculate z-features (z180_*, rz180_*) as in the train script,
+4) collect a feature vector for the last date using meta[“features”],
+5) run it through the XGBoost classifier/regressor,
+6) apply alpha/thr/gate_value/regime_ema from meta,
+7) form a UX verdict.
 """
 
 from __future__ import annotations
@@ -44,14 +44,14 @@ import xgboost as xgb
 import json
 
 # ==================== UX CONFIG ====================
-# "мягкий" BUY по вероятности (для фронта, если понадобится)
+# “soft” BUY based on probability
 UX_SOFT_THR: float = 0.29
-UX_CONF_BAND: float = 0.05  # зона уверенного "Покупай" / "Осторожно" вокруг 0.5
+UX_CONF_BAND: float = 0.05  # strong “Buy” / “Caution” zone around 0.5
 
 # ==================== HORIZONS & SYMBOLS ====================
 SUPPORTED_HORIZONS = [1, 3, 7]
 
-# mapping внутренних тикеров → yfinance тикеров
+# mapping internal tickers → yfinance tickers
 YF_TICKERS: Dict[str, str] = {
     "BTC": "BTC-USD",
     "ETH": "ETH-USD",
@@ -59,7 +59,7 @@ YF_TICKERS: Dict[str, str] = {
     "AAPL": "AAPL",
 }
 
-# календарь для T+N
+# calendar for T+N
 ASSET_CALENDAR: Dict[str, str] = {
     "BTC": "crypto",
     "ETH": "crypto",
@@ -71,14 +71,13 @@ ASSET_CALENDAR: Dict[str, str] = {
 BASE_DIR = Path(__file__).resolve().parents[1]
 MODELS_DIR = BASE_DIR / "models"
 
-# mapping: horizon_days -> model_version_suffix (как в train-скрипте)
+# mapping: horizon_days -> model_version_suffix
 HORIZON_MODEL_VERSION: Dict[int, str] = {
     1: "hybrid_xgb_multi_tplus1_classic_gate_v10_1_v11ux",
     3: "hybrid_xgb_multi_tplus3_classic_gate_v10_1_v11ux_v2",
     7: "hybrid_xgb_multi_tplus7_classic_gate_v10_1_v11ux",
 }
 
-# z-нормализация (должна совпадать с train)
 Z_WIN: int = 180
 Z_MINP: int = 90
 
@@ -235,7 +234,6 @@ def _download_ohlc(symbol: str, start: str = "2018-01-01") -> pd.DataFrame:
 
     df = df.reset_index()
 
-    # 2) ищем колонку даты
     possible_date_cols = ["Date", "date", "Datetime", "datetime", "index"]
     date_col = None
     for c in possible_date_cols:
@@ -244,13 +242,13 @@ def _download_ohlc(symbol: str, start: str = "2018-01-01") -> pd.DataFrame:
             break
 
     if date_col is None:
-        # fallback — первый столбец
+        # fallback
         date_col = df.columns[0]
 
     if date_col != "date":
         df = df.rename(columns={date_col: "date"})
 
-    # 3) rename OHLCV в нижний регистр
+    # 3) rename OHLCV
     rename_map = {}
     for src, tgt in [
         ("Open", "open"),
@@ -277,13 +275,13 @@ def _download_ohlc(symbol: str, start: str = "2018-01-01") -> pd.DataFrame:
     df = df.dropna(subset=["date"])
     df = df.sort_values("date").reset_index(drop=True)
 
-    # оставляем только то, что нужно для фичей
+    # We only keep what is necessary for features.
     keep_cols = ["date", "open", "high", "low", "close", "volume"]
     keep_cols = [c for c in keep_cols if c in df.columns]
     df = df[keep_cols]
 
     if df.shape[0] < (Z_WIN + 10):
-        # строгий guard — нужно достаточно истории для z180
+        # strict guard — enough history is needed for z180
         raise RuntimeError(
             f"{sym_upper}: not enough history from yfinance "
             f"(rows={df.shape[0]}, need at least ~{Z_WIN + 10})"
@@ -292,15 +290,15 @@ def _download_ohlc(symbol: str, start: str = "2018-01-01") -> pd.DataFrame:
     return df
 
 
-# ==================== RAW FEATURE PIPELINE (как build_features, но без таргетов) ====================
+# ==================== RAW FEATURE PIPELINE (как build_features) ====================
 
 def _build_raw_features_for_live(df_ohlc: pd.DataFrame) -> pd.DataFrame:
     """
-    Строим тот же набор base-фичей, что и оффлайн build_features,
-    но:
-      - не создаём next_close / next_return / y_class,
-      - не дропаём последнюю строку.
-    На выходе: DataFrame с колонками:
+    We build the same set of base features as offline build_features,
+    but:
+      - we do not create next_close / next_return / y_class,
+      - we do not drop the last row.
+    The output is a DataFrame with columns:
         close_time, close, open, high, low, volume, ...
         ret_1d, ret_kd, EMA, MACD, Bollinger, ATR, volume_log, cyclical time etc.
     """
@@ -347,14 +345,14 @@ def _build_raw_features_for_live(df_ohlc: pd.DataFrame) -> pd.DataFrame:
     # Time features
     df = pd.concat([df, cyclical_time_features(df["close_time"])], axis=1)
 
-    # Убираем только "голову" с NaN'ами, поскольку z180 всё равно пережжёт ещё часть истории
+    # We only remove the “head” with NaNs, since z180 will still burn through another part of the history.
     df_feat = df.dropna().reset_index(drop=True)
     if df_feat.empty:
         raise RuntimeError("No valid rows left after building raw features")
     return df_feat
 
 
-# ==================== Z-STATIONARIZATION (как в train-скрипте) ====================
+# ==================== Z-STATIONARIZATION ====================
 
 def _rolling_z(s: pd.Series, win: int = Z_WIN, minp: int = Z_MINP) -> pd.Series:
     mu = s.rolling(win, min_periods=minp).mean().shift(1)
@@ -381,21 +379,21 @@ def _build_stationary_features_live(
     regime_ema: int,
 ) -> pd.DataFrame:
     """
-    На вход — сырые фичи (как df_feat из build_features до таргетов).
-    На выходе:
-        close_time, close, ema_200, z180_*, rz180_*
-    с дропом NaN'ов по z-окну.
+    Input: raw features (like df_feat from build_features to targets).
+Output:
+close_time, close, ema_200, z180_*, rz180_*
+with NaN drop by z-window.
     """
     df = df_feat.copy()
     time_col = "close_time"
 
-    # EMA200 для режима (как в train-скрипте)
+    # EMA200
     if regime_ema and "close" in df.columns:
         df["ema_200"] = df["close"].ewm(span=regime_ema, adjust=False).mean()
     else:
         df["ema_200"] = np.nan
 
-    # num_cols — все числовые, кроме служебных
+    # num_cols
     ban_cols = {
         "y_class",
         "next_return",
@@ -486,7 +484,7 @@ def _load_bundle(symbol: str, horizon_days: int) -> Dict[str, Any]:
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
 
-    # isotonic-калибратор может отсутствовать — тогда работаем без него
+    # isotonic
     if iso_path.exists():
         iso = joblib.load(iso_path)
     else:
@@ -517,10 +515,10 @@ def _shift_trading_days(
         return d
 
     if calendar == "crypto":
-        # Крипта торгуется 24/7 — просто сдвигаем на n календарных дней
+        # Cryptocurrency is traded 24/7 — just shift it by n calendar days
         return (d + pd.Timedelta(days=n)).normalize()
 
-    # Акции: шагаем по календарю, считая только будние дни
+    # Promotions: we follow the calendar, counting only weekdays
     steps = 0
     while steps < n:
         d = d + pd.Timedelta(days=1)
@@ -538,12 +536,12 @@ def _build_live_matrix(
     meta: Dict[str, Any],
 ) -> Tuple[pd.DataFrame, float, float, pd.Timestamp]:
     """
-    Строим X_last под набор фич meta["features"] для онлайн-инференса.
-    Возвращает:
-        X_last   — DataFrame с одной строкой и колонками meta["features"]
-        close    — последняя цена close
-        ema200   — последняя ema_200 (или NaN)
-        bar_time — close_time последнего бара
+    Build X_last based on the meta[“features”] feature set for online inference.
+    Returns:
+        X_last   — DataFrame with one row and columns meta[“features”]
+        close    — last close price
+        ema200   — last ema_200 (or NaN)
+        bar_time — close_time of the last bar
     """
     df_ohlc = _download_ohlc(symbol, start=start)
     df_raw = _build_raw_features_for_live(df_ohlc)
@@ -560,14 +558,14 @@ def _build_live_matrix(
     if not feat_cols_model:
         raise RuntimeError("meta['features'] is empty — cannot build X matrix")
 
-    # Собираем X_last: отсутствующие фичи → 0.0 (нейтральный z-уровень)
+    # Collecting X_last: missing features → 0.0 (neutral z-level)
     data = {}
     for col in feat_cols_model:
         if col in work.columns:
             data[col] = [float(row_last[col])]
         else:
-            # если фича не может быть посчитана онлайн (например, rz180_num_trades),
-            # используем 0.0 — это "средний" z-уровень.
+            # if the feature cannot be calculated online (e.g., rz180_num_trades),
+            # we use 0.0 — this is the “average” z-level.
             data[col] = [0.0]
     X_last = pd.DataFrame(data, index=[0], columns=feat_cols_model)
     return X_last, close_last, ema200_last, bar_time
@@ -580,13 +578,13 @@ def _infer_with_bundle(
     ema200_last: float,
 ) -> Tuple[float, float, bool, float]:
     """
-    Прогон последней строки через связку (clf, reg, meta, iso):
+    Passing the last line through the bundle (clf, reg, meta, iso):
 
-    Возвращает:
-        prob_up   — калиброванная вероятность роста (P(up))
-        blend     — итоговый score после alpha-смешивания
-        decision  — финальное long/flat решение по порогу thr + gate + regime
-        ret_score — нормированная амплитуда сигнала ([-1..1])
+    Returns:
+        prob_up   — calibrated probability of growth (P(up))
+        blend     — final score after alpha blending
+        decision  — final long/flat decision based on thr + gate + regime threshold
+        ret_score — normalized signal amplitude ([-1..1])
     """
     clf: xgb.Booster = bundle["clf"]
     reg: xgb.Booster = bundle["reg"]
@@ -601,18 +599,18 @@ def _infer_with_bundle(
     thr = float(meta.get("thr", 0.5))
     regime_ema = int(meta.get("regime_ema", 0))
 
-    # Для рет-регрессора:
-    # если scale_vol / gate_value не сохранены в meta (старые модели),
-    # используем безопасные дефолты.
+    # For the ret-regressor:
+    # if scale_vol / gate_value are not saved in meta (old models),
+    # use safe defaults.
     scale_vol = float(meta.get("scale_vol", 0.02))  # типичный дневной σ ~2%
-    gate_value = float(meta.get("gate_value", 0.0))  # 0.0 => gate выключен
+    gate_value = float(meta.get("gate_value", 0.0))  # 0.0 => gate shut down
 
     dmat = xgb.DMatrix(
         X_last[feat_cols].to_numpy(dtype=np.float32),
         feature_names=feat_cols,
     )
 
-    # --- Классификатор: P(up) ---
+    # --- classifier: P(up) ---
     proba_raw = clf.predict(dmat)
     if isinstance(proba_raw, (np.ndarray, list)):
         proba_raw = float(proba_raw[0])
@@ -625,7 +623,7 @@ def _infer_with_bundle(
     else:
         prob_up = float(proba_raw)
 
-    # --- Регрессор: амплитуда ---
+    # --- Regressor: amplitude ---
     ret_pred = reg.predict(dmat)
     if isinstance(ret_pred, (np.ndarray, list)):
         ret_pred = float(ret_pred[0])
@@ -637,11 +635,11 @@ def _infer_with_bundle(
     # --- Alpha-blend: proba + magnitude-score ---
     blend = (1.0 - alpha) * prob_up + alpha * (ret_score * 0.5 + 0.5)
 
-    # --- Gate по модулю ret_score ---
+    # --- Gate module ret_score ---
     if gate_value > 0.0:
         trade = bool(abs(ret_score) >= gate_value)
     else:
-        # если gate_value не задан в meta — gate отключаем
+        # if gate_value is not specified in meta, disable gate
         trade = True
 
     # --- Regime filter по EMA200 ---
@@ -663,20 +661,20 @@ def predict_live(
     start: str | None = None,
 ) -> Dict[str, Any]:
     """
-    Основной entrypoint для FastAPI:
+    The main entry point for FastAPI:
 
-        res = predict_live("BTC", horizon_days=1)
+        res = predict_live(“BTC”, horizon_days=1)
 
-    Если start не указан, автоматически берём ~последние 365 дней
-    через _default_start_for_live().
+    If start is not specified, we automatically take the last 365 days
+    via _default_start_for_live().
 
-    Возвращает dict:
-        - "asof_time"          — ISO UTC (время расчёта прогноза)
-        - "pred_date"          — ISO UTC (T+N по календарю актива)
-        - "prob_up_calibrated" — P(up)
-        - "decision_long"      — bool
-        - "ux_verdict"         — str (ru)
-        - "horizon_days"       — int
+    Returns dict:
+        - “asof_time”          — ISO UTC (forecast calculation time)
+        - “pred_date”          — ISO UTC (T+N according to the asset calendar)
+        - “prob_up_calibrated” — P(up)
+        - “decision_long”      — bool
+        - “ux_verdict”         — str (ru)
+        - “horizon_days”       — int
     """
     sym_upper = symbol.upper()
     if horizon_days not in SUPPORTED_HORIZONS:
@@ -686,15 +684,15 @@ def predict_live(
 
     calendar = ASSET_CALENDAR.get(sym_upper, "equity")
 
-    # динамический старт, если явно не передали
+    # dynamic start, unless explicitly passed
     if start is None:
         start = _default_start_for_live()
 
-    # 1. Поднимаем bundle (clf, reg, meta, iso)
+    # 1. Upload the bundle (clf, reg, meta, iso)
     bundle = _load_bundle(sym_upper, horizon_days)
     meta: Dict[str, Any] = bundle["meta"]
 
-    # 2. Строим live-фичи и X_last под meta["features"]
+    # 2. Building live features and X_last under meta[“features”]
     X_last, close_last, ema200_last, bar_time = _build_live_matrix(
         sym_upper,
         horizon_days=horizon_days,
@@ -702,7 +700,7 @@ def predict_live(
         meta=meta,
     )
 
-    # 3. Прогон через модели
+    # 3. Run through models
     prob_up, blend, decision_long, ret_score = _infer_with_bundle(
         bundle=bundle,
         X_last=X_last,
@@ -710,7 +708,7 @@ def predict_live(
         ema200_last=ema200_last,
     )
 
-    # 4. Времена: asof_time = "сейчас", pred_date = T+N от последнего бара по календарю актива
+    # 4 Times: asof_time = “now”, pred_date = T+N from the last bar on the asset calendar
     asof_time = pd.Timestamp.utcnow().floor("min")
     pred_date = _shift_trading_days(
         dt=bar_time,
@@ -719,7 +717,7 @@ def predict_live(
     )
     pred_date = pred_date.normalize()
 
-    # 5. UX-вердикт по вероятности (можно поменять на blend, если захочешь)
+    # 5. UX verdict on probability (can be changed to blend if desired)
     if prob_up >= 0.5 + UX_CONF_BAND:
         ux_verdict = "Покупай"
     elif prob_up <= 0.5 - UX_CONF_BAND:
@@ -743,6 +741,6 @@ def predict_live_tplus1(
 ) -> Dict[str, Any]:
     """
     Backward-compatible alias: T+1 online forecast.
-    Если start не указан — используется динамический диапазон ~365 дней.
+    If start is not specified, a dynamic range of ~365 days is used.
     """
     return predict_live(symbol, horizon_days=1, start=start)
